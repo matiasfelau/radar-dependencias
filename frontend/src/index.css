@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-gray-50 text-gray-900;
+}
+
+main {
+  @apply max-w-7xl mx-auto px-4 py-8;
+}
+
+.card {
+  @apply bg-white rounded-lg shadow p-6;
+}
+
+.btn-primary {
+  @apply px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition;
+}
+
+.btn-secondary {
+  @apply px-4 py-2 bg-gray-200 text-gray-900 rounded hover:bg-gray-300 transition;
+}
+
+.badge-critical {
+  @apply inline-block px-3 py-1 bg-red-100 text-red-800 rounded text-sm;
+}
+
+.badge-high {
+  @apply inline-block px-3 py-1 bg-orange-100 text-orange-800 rounded text-sm;
+}
+
+.badge-medium {
+  @apply inline-block px-3 py-1 bg-yellow-100 text-yellow-800 rounded text-sm;
+}
+
+.badge-low {
+  @apply inline-block px-3 py-1 bg-green-100 text-green-800 rounded text-sm;
+}

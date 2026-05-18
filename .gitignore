@@ -1,0 +1,16 @@
+.env
+.env.local
+.DS_Store
+*.log
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+node_modules/
+dist/
+build/
+*.egg-info/
+.coverage
+htmlcov/
+.vscode/settings.json
+postgres_data/
