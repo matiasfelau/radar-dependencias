@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import secrets
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -12,6 +13,9 @@ from app.models.dependency import Dependency
 from app.models.environment import Environment
 from app.models.project import Project
 from app.parsers.base import ParsedDependency
+from app.services.vulnerability_scanner import scan_vulnerabilities
+
+logger = logging.getLogger(__name__)
 
 
 class ProjectEnvironment(StrEnum):
@@ -78,6 +82,17 @@ def register_dependency_snapshot(
     env.updated_at = datetime.now(UTC)
     db.commit()
     db.refresh(env)
+
+    vulnerability_result = scan_vulnerabilities(db)
+
+    # The first CI/CD commit should already populate vulnerability alerts.
+    # Keep the dependency snapshot response unchanged, but log the scan result.
+    logger.info(
+        "Initial vulnerability scan after dependency snapshot: activated=%s resolved=%s scanned_pairs=%s",
+        vulnerability_result.get("activated"),
+        vulnerability_result.get("resolved"),
+        vulnerability_result.get("scanned_pairs"),
+    )
 
     return env, len(deduplicated)
 

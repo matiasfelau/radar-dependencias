@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 
 import httpx
@@ -122,15 +123,20 @@ def _extract_severity(vuln: dict[str, object]) -> str:
         for item in severity_items:
             if not isinstance(item, dict):
                 continue
-            value = str(item.get("score", "")).upper()
-            if "CRITICAL" in value:
+            value = str(item.get("score", "")).strip()
+            upper_value = value.upper()
+            if "CRITICAL" in upper_value:
                 return "Critical"
-            if "HIGH" in value:
+            if "HIGH" in upper_value:
                 return "High"
-            if "MEDIUM" in value:
+            if "MEDIUM" in upper_value:
                 return "Medium"
-            if "LOW" in value:
+            if "LOW" in upper_value:
                 return "Low"
+
+            cvss_severity = _severity_from_cvss_vector(value)
+            if cvss_severity != "Unknown":
+                return cvss_severity
 
     database_specific = vuln.get("database_specific")
     if isinstance(database_specific, dict):
@@ -139,3 +145,67 @@ def _extract_severity(vuln: dict[str, object]) -> str:
             return level
 
     return "Unknown"
+
+
+def _severity_from_cvss_vector(vector: str) -> str:
+    if not vector.startswith("CVSS:"):
+        return "Unknown"
+
+    metrics = _parse_cvss_vector(vector)
+    if not metrics:
+        return "Unknown"
+
+    scope = metrics.get("S", "U")
+    av = {"N": 0.85, "A": 0.62, "L": 0.55, "P": 0.2}.get(metrics.get("AV", ""))
+    ac = {"L": 0.77, "H": 0.44}.get(metrics.get("AC", ""))
+    ui = {"N": 0.85, "R": 0.62}.get(metrics.get("UI", ""))
+
+    if scope == "U":
+        pr = {"N": 0.85, "L": 0.62, "H": 0.27}.get(metrics.get("PR", ""))
+    else:
+        pr = {"N": 0.85, "L": 0.68, "H": 0.5}.get(metrics.get("PR", ""))
+
+    c = {"N": 0.0, "L": 0.22, "H": 0.56}.get(metrics.get("C", ""))
+    i = {"N": 0.0, "L": 0.22, "H": 0.56}.get(metrics.get("I", ""))
+    a = {"N": 0.0, "L": 0.22, "H": 0.56}.get(metrics.get("A", ""))
+
+    if None in {av, ac, pr, ui, c, i, a}:
+        return "Unknown"
+
+    exploitability = 8.22 * av * ac * pr * ui
+    impact_subscore = 1 - ((1 - c) * (1 - i) * (1 - a))
+
+    if scope == "U":
+        impact = 6.42 * impact_subscore
+    else:
+        impact = 7.52 * (impact_subscore - 0.029) - 3.25 * ((impact_subscore - 0.02) ** 15)
+
+    if impact <= 0:
+        base_score = 0.0
+    else:
+        base_score = min(impact + exploitability, 10.0)
+        base_score = math.ceil(base_score * 10) / 10
+
+    if base_score >= 9.0:
+        return "Critical"
+    if base_score >= 7.0:
+        return "High"
+    if base_score >= 4.0:
+        return "Medium"
+    if base_score > 0:
+        return "Low"
+    return "Unknown"
+
+
+def _parse_cvss_vector(vector: str) -> dict[str, str]:
+    parts = vector.split("/")
+    if not parts:
+        return {}
+
+    metrics: dict[str, str] = {}
+    for part in parts[1:]:
+        if ":" not in part:
+            continue
+        key, value = part.split(":", 1)
+        metrics[key] = value
+    return metrics
