@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging
+from app.services.bootstrap import bootstrap_application
 from app.services.scheduler import create_scheduler, stop_scheduler
 
 
@@ -13,6 +14,7 @@ from app.services.scheduler import create_scheduler, stop_scheduler
 async def lifespan(_: FastAPI):
     settings = get_settings()
     configure_logging(settings.log_level)
+    bootstrap_application()
     scheduler_state = create_scheduler(default_interval_hours=12)
     yield
     stop_scheduler(scheduler_state)

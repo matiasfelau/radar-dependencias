@@ -38,6 +38,9 @@ export function Alerts({ data }: any) {
                   Installed: {alert.installed_version}
                   {alert.latest_version ? ` · Latest: ${alert.latest_version}` : ''}
                 </div>
+                <div className="text-xs text-gray-500 uppercase tracking-wide mt-1">
+                  Source: {alert.dependency_source}
+                </div>
               </div>
               <div className="text-right space-y-1">
                 <span className={getSeverityBadgeClass(severityLabel)}>{severityLabel}</span>

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.models.project import Project
 from app.models.environment import Environment
 from app.models.dependency import Dependency
+from app.services.self_monitoring import is_self_monitoring_project
 
 
 def get_projects_inventory(db: Session) -> list[dict]:
@@ -28,6 +29,6 @@ def get_projects_inventory(db: Session) -> list[dict]:
             ]
             env_list.append({"name": env.name, "updated_at": env.updated_at, "dependencies": deps_list})
 
-        result.append({"name": project.name, "environments": env_list})
+        result.append({"name": project.name, "is_internal": is_self_monitoring_project(project.name), "environments": env_list})
 
     return result

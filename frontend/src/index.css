@@ -6,8 +6,12 @@ body {
   @apply bg-gray-50 text-gray-900;
 }
 
-main {
+.app-shell {
   @apply max-w-7xl mx-auto px-4 py-8;
+}
+
+.auth-screen {
+  @apply w-full;
 }
 
 .card {
@@ -20,6 +24,10 @@ main {
 
 .btn-secondary {
   @apply px-4 py-2 bg-gray-200 text-gray-900 rounded hover:bg-gray-300 transition;
+}
+
+.btn-danger {
+  @apply px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition;
 }
 
 .badge-critical {

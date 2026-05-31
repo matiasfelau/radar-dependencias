@@ -55,6 +55,11 @@ export function Inventory({ data }: any) {
   const [createError, setCreateError] = useState('')
   const [createdProject, setCreatedProject] = useState<any>(null)
 
+  const refreshAfterCopy = async (key: string) => {
+    await navigator.clipboard.writeText(key)
+    window.location.reload()
+  }
+
   const handleCreateProject = async () => {
     if (!newProjectName.trim()) {
       setCreateError('Project name is required')
@@ -67,8 +72,6 @@ export function Inventory({ data }: any) {
       setCreatedProject(response)
       setNewProjectName('')
       setShowCreateForm(false)
-      // Auto-refresh after 2s
-      setTimeout(() => window.location.reload(), 2000)
     } catch (error: any) {
       setCreateError(error?.response?.data?.detail || 'Failed to create project')
     } finally {
@@ -170,7 +173,7 @@ export function Inventory({ data }: any) {
               <input className="w-full px-2 py-1 text-sm border rounded" readOnly value={createdProject.api_key} />
               <button
                 className="btn-primary text-sm"
-                onClick={() => navigator.clipboard.writeText(createdProject.api_key)}
+                onClick={() => refreshAfterCopy(createdProject.api_key)}
               >
                 Copy
               </button>
@@ -187,26 +190,36 @@ export function Inventory({ data }: any) {
           <div className="flex items-center justify-between gap-3 mb-4">
             <h3 className="text-lg font-bold">{project.name}</h3>
             <div className="flex gap-2">
-              <button
-                type="button"
-                className="btn-secondary text-sm"
-                onClick={() => handleGenerateApiKey(project.name)}
-                disabled={!!loadingByProject[project.name]}
-                title="Genera una nueva key para CI/CD"
-              >
-                {loadingByProject[project.name] ? 'Generating...' : 'Generate API key'}
-              </button>
-              <button
-                type="button"
-                className="btn-danger text-sm"
-                onClick={() => handleDeleteProject(project.name)}
-                disabled={!!deleteLoadingByProject[project.name]}
-                title="Delete project and all data"
-              >
-                {deleteLoadingByProject[project.name] ? 'Deleting...' : 'Delete'}
-              </button>
+              {!project.is_internal && (
+                <>
+                  <button
+                    type="button"
+                    className="btn-secondary text-sm"
+                    onClick={() => handleGenerateApiKey(project.name)}
+                    disabled={!!loadingByProject[project.name]}
+                    title="Genera una nueva key para CI/CD"
+                  >
+                    {loadingByProject[project.name] ? 'Generating...' : 'Generate API key'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-danger text-sm"
+                    onClick={() => handleDeleteProject(project.name)}
+                    disabled={!!deleteLoadingByProject[project.name]}
+                    title="Delete project and all data"
+                  >
+                    {deleteLoadingByProject[project.name] ? 'Deleting...' : 'Delete'}
+                  </button>
+                </>
+              )}
             </div>
           </div>
+
+          {project.is_internal && (
+            <div className="mb-4 text-xs font-semibold uppercase tracking-wide text-amber-700">
+              Internal radar project: read-only
+            </div>
+          )}
 
           {keyByProject[project.name] && (
             <div className="mb-4 p-3 rounded bg-blue-50 border border-blue-200">
@@ -220,7 +233,7 @@ export function Inventory({ data }: any) {
                 <button
                   type="button"
                   className="btn-primary text-sm"
-                  onClick={() => handleCopy(project.name)}
+                  onClick={() => refreshAfterCopy(keyByProject[project.name])}
                 >
                   Copy
                 </button>

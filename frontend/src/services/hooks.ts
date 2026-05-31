@@ -28,6 +28,37 @@ export interface PackageHealthItem {
 export interface SettingsResponse {
   scan_interval_seconds: number;
   webhook_url: string;
+  telegram_bot_token: string;
+  telegram_chat_id: string;
+}
+
+export interface AuthUser {
+  id: number
+  username: string
+  is_admin: boolean
+  permissions: string[]
+  must_change_password: boolean
+}
+
+export interface UserSummary {
+  id: number
+  username: string
+  is_admin: boolean
+  permissions: string[]
+  must_change_password: boolean
+  created_at: string
+}
+
+export interface LoginResponse {
+  access_token: string
+  token_type: string
+  must_change_password: boolean
+  user: AuthUser
+}
+
+export interface CreateUserResponse {
+  user: UserSummary
+  temp_password: string
 }
 
 // 2. Aplicamos los tipos genéricos en los Hooks

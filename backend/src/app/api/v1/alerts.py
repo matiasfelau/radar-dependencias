@@ -2,7 +2,7 @@ import logging
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import and_, desc, select
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -11,7 +11,10 @@ from app.models.environment import Environment
 from app.models.project import Project
 from app.models.vulnerability import SeverityLevel, Vulnerability, VulnerabilityStatus
 from app.schemas.projects import ActiveAlertItem, ActiveAlertsResponse
+from app.services.auth_service import get_current_user, require_admin_user
+from app.services.npm_client import get_latest_npm_version, has_npm_update
 from app.services.pypi_client import get_latest_pypi_version, has_pypi_update
+from app.services.alert_notification_service import process_scan_notifications
 from app.services.vulnerability_scanner import scan_vulnerabilities
 
 router = APIRouter(prefix="/alerts")
@@ -19,7 +22,10 @@ logger = logging.getLogger(__name__)
 
 
 @router.get("/active", response_model=ActiveAlertsResponse, summary="List active vulnerability alerts")
-def list_active_alerts(db: Session = Depends(get_db)) -> ActiveAlertsResponse:
+def list_active_alerts(
+    db: Session = Depends(get_db),
+    _current_user=Depends(get_current_user),
+) -> ActiveAlertsResponse:
     records = db.execute(
         select(Dependency, Project.name, Environment.name, Environment.updated_at, Vulnerability)
         .join(Environment, Environment.id == Dependency.environment_id)
@@ -40,7 +46,7 @@ def list_active_alerts(db: Session = Depends(get_db)) -> ActiveAlertsResponse:
         if vuln is not None:
             logger.debug("  Row: %s@%s in %s/%s has CVE %s", dep.package_name, dep.installed_version, proj, env, vuln.cve_id)
 
-    latest_version_cache: dict[str, str | None] = {}
+    latest_version_cache: dict[tuple[str, str], str | None] = {}
     aggregated: dict[tuple[str, str, str, str], dict[str, object]] = {}
     severity_rank = {
         SeverityLevel.UNKNOWN.value: 0,
@@ -53,17 +59,27 @@ def list_active_alerts(db: Session = Depends(get_db)) -> ActiveAlertsResponse:
     for dependency, project_name, environment_name, environment_updated_at, vulnerability in records:
         key = (project_name, environment_name, dependency.package_name, dependency.installed_version)
         if key not in aggregated:
-            if dependency.package_name not in latest_version_cache:
-                latest_version_cache[dependency.package_name] = get_latest_pypi_version(dependency.package_name)
+            cache_key = (dependency.ecosystem, dependency.package_name)
+            if cache_key not in latest_version_cache:
+                if dependency.ecosystem == "npm":
+                    latest_version_cache[cache_key] = get_latest_npm_version(dependency.package_name)
+                else:
+                    latest_version_cache[cache_key] = get_latest_pypi_version(dependency.package_name)
 
-            latest_version = latest_version_cache[dependency.package_name]
+            latest_version = latest_version_cache[cache_key]
+            has_update = (
+                has_npm_update(dependency.installed_version, latest_version)
+                if dependency.ecosystem == "npm"
+                else has_pypi_update(dependency.installed_version, latest_version)
+            )
             aggregated[key] = {
                 "project_name": project_name,
                 "environment_name": environment_name,
                 "package_name": dependency.package_name,
                 "installed_version": dependency.installed_version,
+                "dependency_source": dependency.ecosystem,
                 "has_vulnerability": False,
-                "has_update": has_pypi_update(dependency.installed_version, latest_version),
+                "has_update": has_update,
                 "latest_version": latest_version,
                 "max_severity": None,
                 "updated_at": environment_updated_at,
@@ -88,6 +104,7 @@ def list_active_alerts(db: Session = Depends(get_db)) -> ActiveAlertsResponse:
             environment_name=item["environment_name"],
             package_name=item["package_name"],
             installed_version=item["installed_version"],
+            dependency_source=item["dependency_source"],
             has_vulnerability=item["has_vulnerability"],
             has_update=item["has_update"],
             latest_version=item["latest_version"],
@@ -112,25 +129,38 @@ def list_active_alerts(db: Session = Depends(get_db)) -> ActiveAlertsResponse:
 
 
 @router.post("/debug/scan", summary="Manually trigger vulnerability scan (debug only)")
-def debug_trigger_scan(db: Session = Depends(get_db)) -> dict[str, int]:
-    """
-    Manually execute the vulnerability scanner.
-    Useful for testing. In production, the background scheduler handles this.
-    """
+def debug_trigger_scan(
+    db: Session = Depends(get_db),
+    _current_user=Depends(get_current_user),
+) -> dict[str, int]:
+    """Manually execute the vulnerability scanner and Telegram notifications."""
     result = scan_vulnerabilities(db)
-    logger.info(
-        "Manual vulnerability scan triggered from API: upserted=%s deleted=%s vulnerable=%s with_updates=%s scanned_pairs=%s",
-        result.get("upserted"),
-        result.get("deleted"),
-        result.get("vulnerable"),
-        result.get("with_updates"),
-        result.get("scanned_pairs"),
+    notification_result = process_scan_notifications(
+        db,
+        new_findings=result.get("new_findings", []),
     )
-    return result
+    logger.info(
+        "Manual vulnerability scan triggered from API: activated=%s resolved=%s scanned_pairs=%s telegram_vulnerabilities=%s telegram_updates=%s",
+        result.get("activated"),
+        result.get("resolved"),
+        result.get("scanned_pairs"),
+        notification_result.get("vulnerabilities_sent"),
+        notification_result.get("updates_sent"),
+    )
+    return {
+        "activated": int(result.get("activated", 0)),
+        "resolved": int(result.get("resolved", 0)),
+        "scanned_pairs": int(result.get("scanned_pairs", 0)),
+        "telegram_vulnerabilities_sent": int(notification_result.get("vulnerabilities_sent", 0)),
+        "telegram_updates_sent": int(notification_result.get("updates_sent", 0)),
+    }
 
 
 @router.get("/debug/vulnerabilities", summary="Debug: List all vulnerabilities in database")
-def debug_list_vulnerabilities(db: Session = Depends(get_db)) -> dict[str, object]:
+def debug_list_vulnerabilities(
+    db: Session = Depends(get_db),
+    _admin=Depends(require_admin_user),
+) -> dict[str, object]:
     """
     Show all vulnerabilities currently in the database.
     Useful for debugging why vulnerabilities aren't appearing in alerts.

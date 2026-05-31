@@ -31,6 +31,7 @@ class ActiveAlertItem(BaseModel):
     environment_name: str
     package_name: str
     installed_version: str
+    dependency_source: str
     has_vulnerability: bool
     has_update: bool
     latest_version: str | None

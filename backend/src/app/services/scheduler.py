@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.db.session import SessionLocal
+from app.services.alert_notification_service import process_scan_notifications
 from app.services.settings_service import get_scan_interval_seconds
 from app.services.vulnerability_scanner import scan_vulnerabilities
 
@@ -59,11 +60,15 @@ def _scan_job(state: ScanScheduler) -> None:
 
         logger.info("Running scheduled vulnerability scan (interval=%s seconds)", state.current_interval_seconds)
         result = scan_vulnerabilities(db)
+        notification_result = process_scan_notifications(
+            db,
+            new_findings=result.get("new_findings", []),
+        )
         logger.info(
-            "Scheduled vulnerability scan finished: upserted=%s deleted=%s vulnerable=%s with_updates=%s scanned_pairs=%s",
-            result.get("upserted"),
-            result.get("deleted"),
-            result.get("vulnerable"),
-            result.get("with_updates"),
+            "Scheduled vulnerability scan finished: activated=%s resolved=%s scanned_pairs=%s telegram_vulnerabilities=%s telegram_updates=%s",
+            result.get("activated"),
+            result.get("resolved"),
             result.get("scanned_pairs"),
+            notification_result.get("vulnerabilities_sent"),
+            notification_result.get("updates_sent"),
         )

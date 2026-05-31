@@ -12,7 +12,9 @@ from sqlalchemy.orm import Session
 from app.models.dependency import Dependency
 from app.models.environment import Environment
 from app.models.project import Project
-from app.parsers.base import ParsedDependency
+from app.parsers.base import DependencyEcosystem, ParsedDependency
+from app.services.alert_notification_service import process_scan_notifications
+from app.services.self_monitoring import is_self_monitoring_project
 from app.services.vulnerability_scanner import scan_vulnerabilities
 
 logger = logging.getLogger(__name__)
@@ -60,11 +62,11 @@ def register_dependency_snapshot(
         db.add(env)
         db.flush()
 
-    deduplicated = {
-        dep.package_name.strip().lower(): dep.installed_version.strip()
-        for dep in dependencies
-        if dep.package_name.strip()
-    }
+    deduplicated: dict[str, ParsedDependency] = {}
+    for dep in dependencies:
+        package_name = dep.package_name.strip().lower()
+        if package_name:
+            deduplicated[package_name] = dep
 
     db.execute(delete(Dependency).where(Dependency.environment_id == env.id))
 
@@ -73,9 +75,10 @@ def register_dependency_snapshot(
             Dependency(
                 environment_id=env.id,
                 package_name=package_name,
-                installed_version=installed_version or "unspecified",
+                installed_version=dependency.installed_version.strip() or "unspecified",
+                ecosystem=dependency.ecosystem.value,
             )
-            for package_name, installed_version in sorted(deduplicated.items())
+            for package_name, dependency in sorted(deduplicated.items())
         ]
     )
 
@@ -84,14 +87,20 @@ def register_dependency_snapshot(
     db.refresh(env)
 
     vulnerability_result = scan_vulnerabilities(db)
+    notification_result = process_scan_notifications(
+        db,
+        new_findings=vulnerability_result.get("new_findings", []),
+    )
 
     # The first CI/CD commit should already populate vulnerability alerts.
     # Keep the dependency snapshot response unchanged, but log the scan result.
     logger.info(
-        "Initial vulnerability scan after dependency snapshot: activated=%s resolved=%s scanned_pairs=%s",
+        "Initial vulnerability scan after dependency snapshot: activated=%s resolved=%s scanned_pairs=%s telegram_vulnerabilities=%s telegram_updates=%s",
         vulnerability_result.get("activated"),
         vulnerability_result.get("resolved"),
         vulnerability_result.get("scanned_pairs"),
+        notification_result.get("vulnerabilities_sent"),
+        notification_result.get("updates_sent"),
     )
 
     return env, len(deduplicated)
@@ -101,6 +110,8 @@ def rotate_project_api_key(db: Session, project_name: str) -> tuple[Project, str
     project = db.scalar(select(Project).where(Project.name == project_name))
     if project is None:
         raise LookupError("project not found")
+    if is_self_monitoring_project(project.name):
+        raise PermissionError("self-monitoring projects cannot rotate their API key")
 
     # token_urlsafe(32) gives a high-entropy key suitable for CI/CD secrets.
     new_api_key = secrets.token_urlsafe(32)
@@ -115,5 +126,7 @@ def delete_project(db: Session, project_name: str) -> None:
     project = db.scalar(select(Project).where(Project.name == project_name))
     if project is None:
         raise LookupError("project not found")
+    if is_self_monitoring_project(project.name):
+        raise PermissionError("self-monitoring projects cannot be deleted")
     db.delete(project)
     db.commit()

@@ -16,6 +16,7 @@ class InventoryEnvironment(BaseModel):
 
 class InventoryProject(BaseModel):
     name: str
+    is_internal: bool = False
     environments: List[InventoryEnvironment]
 
 

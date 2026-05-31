@@ -16,5 +16,6 @@ class Dependency(Base):
     )
     package_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     installed_version: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    ecosystem: Mapped[str] = mapped_column(String(16), nullable=False, default="pypi", index=True)
 
     environment: Mapped["Environment"] = relationship(back_populates="dependencies")
